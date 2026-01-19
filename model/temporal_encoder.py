@@ -1,4 +1,3 @@
-# ========== paste into model/temporal_encoder.py ==========
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -65,9 +64,9 @@ class AdaptiveMSEarlyFuse(nn.Module):
             TemporalConvBlock(in_dim, out_dim, k, d, dropout)
             for (k,d) in branches
         ])
-        # 对齐：把每个分支的通道统计对齐到统一分布（减少尺度漂移）
+        # 对齐：把每个分支的通道统计对齐到统一分布
         self.align = nn.ModuleList([nn.LayerNorm(out_dim) for _ in branches])
-        self.base_idx = 0  # 基准分支（建议 (3,1) 放第一位）
+        self.base_idx = 0  
         self.router = _GateRouter(in_feats=6, hidden=32, branches=self.num_branches, win_large=router_win)
         self.kappa_min, self.kappa_max = kappa_min, kappa_max
         self.drop = nn.Dropout(dropout)
@@ -83,14 +82,10 @@ class AdaptiveMSEarlyFuse(nn.Module):
             feats.append(y)
             strengths.append(torch.sqrt((y*y).mean(dim=-1, keepdim=True)+1e-6).transpose(0,1))  # [1,T]
 
-        # 基准强度（简单均值）作为路由的“形状信号”
         s_base = torch.stack(strengths, dim=-1).mean(dim=-1).squeeze(0)  # [T]
         s_base = s_base.unsqueeze(0)  # [1,T]
 
-        # 路由 logits -> 温度化 softmax
         logits = self.router(s_base)                  # [T,B]
-        # 温度 κ(·)：α大（尖峰）→ 小温度（更接近argmax）；宽帽→大温度（更均匀）
-        # 这里用 logits 的幅度代理 α：|∇s| + |∇²s|
         with torch.no_grad():
             d1 = F.pad(torch.abs(s_base[:,1:]-s_base[:,:-1]), (1,0))
             d2 = F.pad(torch.abs(s_base[:,2:]-2*s_base[:,1:-1]+s_base[:,:-2]), (1,1))
@@ -100,13 +95,11 @@ class AdaptiveMSEarlyFuse(nn.Module):
         w = torch.softmax(logits_t, dim=-1)                                          # [T,B]
         self.last_alpha = w.detach()
 
-        # 残差保护：保留基准分支的峰值
         y_base = feats[self.base_idx]                                                # [T,H]
         y_fuse = 0.0
         for b in range(self.num_branches):
             wb = w[:, b].unsqueeze(-1)                                               # [T,1]
             y_fuse = y_fuse + feats[b] * wb
-        # 残差注入（小系数，避免过平滑）
         y = y_fuse + 0.2 * y_base
         y = self.drop(y)
         return y  # [T,H]
@@ -118,15 +111,12 @@ class TemporalGraphEncoder(nn.Module):
     """
     def __init__(self, input_dim, hidden_dim, num_layers, dropout=0.2):
         super().__init__()
-        # 1) 早融合输出维度固定为 hidden_dim
         self.temporal_ms = AdaptiveMSEarlyFuse(
             in_dim=input_dim, out_dim=hidden_dim,
             branches=((3,1),(5,2),(7,3)),
-            # dropout=dropout, router_win=31, kappa_min=0.15, kappa_max=1.0
             dropout=dropout, router_win=31, kappa_min=0.15, kappa_max=1.0
         )
 
-        # 2) GAT：非 lazy；确保 out_channels * heads == hidden_dim
         heads = 4
         assert hidden_dim % heads == 0, \
             f"hidden_dim={hidden_dim} 必须能被 heads={heads} 整除"
