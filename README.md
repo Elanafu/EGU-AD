@@ -21,6 +21,13 @@
 ├── checkpoints/                # Model checkpoints
 └── README.md
 
+
+## Environment Requirements
+Python ≥ 3.8
+PyTorch ≥ 1.10
+NumPy, SciPy, and other standard scientific Python libraries
+
+
 ## Training and Testing
 
 ### Training
