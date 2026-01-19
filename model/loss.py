@@ -1,20 +1,3 @@
-# loss.py
-# 统一能量–时间训练目标（EGU-AD）
-#
-# 结构对应两大模块：
-# 1) Temporal Consistency Learning（时间一致性学习） → L_state
-# 2) Energy-Driven Representation Learning（能量驱动表示学习） → L_flow, L_diss, L_geo
-#
-# 其中能量分支内部三项可解释为：
-# - L_flow : Energy Trend Consistency（能量趋势一致性）
-# - L_diss : Energy Residual Stability（能量残差稳定性）
-# - L_geo  : Adaptive Energy Trajectory Smoothness（自适应能量轨迹平滑）
-#
-# 注意：
-# - lambda_ctr / lambda_time 逻辑上已经废弃（恒为 0），仅为兼容 solver 的打印与参数传递。
-# - 若 model.pgw 存在，则仍保留一个极小的先验正则 L_wprior（不影响主要行为，可视为高级选项）。
-
-
 import torch
 import torch.nn.functional as F
 import numpy as np
@@ -40,35 +23,7 @@ def compute_loss(
     lambda_w_prior: float = 1e-3,        # 若存在 model.pgw，则施加极小先验正则
     **kwargs,
 ):
-    """
-    统一损失函数。
 
-    Args
-    ----
-    model : nn.Module
-        EGU-AD 主模型（可能包含 pgw 等子模块）。
-    h : Tensor [T, D_h]
-        几何分支 / 编码器输出的中间特征（作为对齐目标）。
-    p : Tensor [T, D_p]
-        最终用于异常检测的时间状态表示。
-    h_targ_n : Tensor [T, D_p]
-        h 的归一化版本或其它对齐目标（目前仅用于兼容项）。
-    edge_index : Tensor
-        图结构索引（在当前损失中未直接使用，保留以便扩展）。
-    E : Tensor [T] 或 None
-        能量标量轨迹。
-    dE_pred : Tensor [T] 或 None
-        预测的能量增量序列。
-
-    Returns
-    -------
-    total_loss : Tensor (scalar)
-        用于 backward 的总损失。
-    loss_items : dict[str, float]
-        各子项的标量值（已 detach），用于日志打印。
-    parts : dict[str, Tensor]
-        中间 Tensor，用于可视化 / debug。
-    """
     device = p.device
     eps = 1e-8
 
@@ -94,18 +49,13 @@ def compute_loss(
         # 真实能量增量 ΔE_true
         dE_true = E[1:] - E[:-1]                  # [T-1]
 
-        # 1.1 能量趋势一致性：预测增量对齐真实增量
-        #     对应：Energy Trend Consistency
+
         L_flow_t = F.mse_loss(dE_pred[1:], dE_true)
 
-        # 1.2 自适应轨迹平滑的换挡遮罩：
-        #     使用 |ΔE_true| 的 80% 分位数区分“低速正常区”和“模式切换区”
         base = dE_true.abs().detach().cpu().numpy().reshape(-1)
         q80 = float(np.percentile(base, 80.0)) if base.size > 0 else 0.0
         mask = (dE_true.abs() <= q80).float().to(device)  # [T-1] 低速段 = 更应平滑
 
-        # 1.3 残差 r_t 及其时间平滑（TV），只在低速段约束
-        #     对应：Residual Energy Stability 的一部分 + 轨迹平滑的一部分
         r_t_full = (dE_true - dE_pred[1:]).abs()  # [T-1]
         if r_t_full.numel() > 1:
             r_tv_all = F.mse_loss(
@@ -116,8 +66,7 @@ def compute_loss(
         else:
             r_tv_t = _zero()
 
-        # 1.4 能量轨迹的二阶差分（曲线形状），同样只在低速段约束
-        #     对应：Adaptive Energy Trajectory Smoothness 的主体
+
         if E.numel() > 2:
             ddE = E[2:] - 2.0 * E[1:-1] + E[:-2]   # [T-2]
             L_gbe_all = ddE ** 2
@@ -127,8 +76,7 @@ def compute_loss(
         else:
             L_gbe_t = _zero()
 
-        # 1.5 残差能量的稳定性 + 可选 sigma 锚
-        #     对应：Energy Residual Stability 的主体
+
         L_diss_huber_t = _huber(r_t_full, huber_delta)
         if target_sigma is not None:
             sigma = torch.std(E, unbiased=False) + eps
@@ -175,7 +123,6 @@ def compute_loss(
     # ------------------------------------------------------------------
     L_wprior_t = _zero()
     if (lambda_w_prior > 0.0) and hasattr(model, "pgw") and (model.pgw is not None):
-        # 若模型定义了 pgw，则可以返回一个很小的先验正则
         L_wprior_t = model.pgw.prior_loss(lambda_w=lambda_w_prior).to(device)
 
     # ------------------------------------------------------------------
@@ -193,7 +140,7 @@ def compute_loss(
     )
 
     # ------------------------------------------------------------------
-    # 6) 标量化日志输出
+    # 6) 日志输出
     # ------------------------------------------------------------------
     loss_items = {
         "L_flow": float(L_flow_t.detach().item()),
