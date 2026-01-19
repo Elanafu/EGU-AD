@@ -37,7 +37,6 @@ class _GateRouter(nn.Module):
         return F.pad(x, (pad, pad), mode='replicate').unfold(-1, k, 1)
 
     def forward(self, s_bt):  # s_bt: [1,T] —— 用于路由的标量轨迹（融合前的基准强度）
-        # 形状特征：d1, d2, 大窗 mean/var/kurt，再加 s 本身
         B, T = s_bt.shape
         d1 = F.pad(torch.abs(s_bt[:, 1:] - s_bt[:, :-1]), (1, 0))
         d2 = F.pad(torch.abs(s_bt[:, 2:] - 2*s_bt[:, 1:-1] + s_bt[:, :-2]), (1, 1))
@@ -53,7 +52,6 @@ class AdaptiveMSEarlyFuse(nn.Module):
     """
     自适应多尺度（特征层早融合）：
     - 多个 (k,d) 分支 -> 通道归一化 -> 门控权重（softmax(temperature)） -> 加权求和
-    - 防塌陷：基准分支残差 (k=3,d=1) + 对齐层 + 门控正则（训练时）
     """
     def __init__(self, in_dim, out_dim,
                  branches=((3,1),(5,2),(7,3)),
@@ -74,7 +72,6 @@ class AdaptiveMSEarlyFuse(nn.Module):
         self.kappa_min, self.kappa_max = kappa_min, kappa_max
         self.drop = nn.Dropout(dropout)
 
-        # 训练时存可视化信息
         self.last_alpha = None  # [T,B]
 
     def forward(self, x):          # x: [T, Din]
