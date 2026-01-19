@@ -4,9 +4,6 @@ import types
 import torch
 import time
 
-############################################################
-# 0. 兼容补丁：拦截 torch._dynamo / torch.onnx 中的问题接口
-############################################################
 
 os.environ["PYTORCH_DISABLE_DYNAMO"] = "1"
 os.environ["TORCH_COMPILE_DISABLE"] = "1"
@@ -19,7 +16,6 @@ def set_seed(seed: int = 2):
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
-    # 完全确定性
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":16:8"  # CUDA 11+ 需要
@@ -27,12 +23,6 @@ def set_seed(seed: int = 2):
         torch.use_deterministic_algorithms(True, warn_only=True)
     except Exception:
         pass
-
-
-# 有些 PyTorch 2.x 环境下，在禁用 dynamo/compile 时，
-# torch._dynamo 会变成一个 SimpleNamespace，没有 disable()。
-# 后面 optimizer 初始化路径里的 torch/_compile.py 会假设 disable() 存在，
-# 于是报 AttributeError。我们在这里兜底补一个 no-op 的 disable。
 
 if hasattr(torch, "_dynamo"):
     if isinstance(torch._dynamo, types.SimpleNamespace):
@@ -50,7 +40,6 @@ if hasattr(torch, "_dynamo"):
 
 # 屏蔽 onnx exporter 相关接口
 if hasattr(torch, "onnx"):
-    # 1) fake torch.onnx.operators (有的老版本才有, 新版可能拆掉了)
     if not hasattr(torch.onnx, "operators"):
         torch.onnx.operators = types.SimpleNamespace()
 
@@ -63,14 +52,9 @@ if hasattr(torch, "onnx"):
 
     exp = torch.onnx._internal.exporter
     if not hasattr(exp, "DiagnosticOptions"):
-        # 定义一个最小壳，防止 "from torch.onnx._internal.exporter import DiagnosticOptions" 失败
         class _FakeDiagnosticOptions:
             pass
         exp.DiagnosticOptions = _FakeDiagnosticOptions
-
-############################################################
-# 1. 继续正常 import 其余依赖（现在 torch 已被打补丁）
-############################################################
 
 import numpy as np
 import random
@@ -111,7 +95,6 @@ def build_args():
     parser.add_argument('--dataset', type=str, default='PSM')
     parser.add_argument('--data_path', type=str, required=True)
     parser.add_argument('--model_save_path', type=str, default='cpt_eie')
-    # parser.add_argument('--lambda_dev', type=float, default=0.05)
 
     parser.add_argument('--lr', type=float, default=1e-4)
     parser.add_argument('--num_epochs', type=int, default=5)
@@ -149,7 +132,6 @@ def main(args):
 
 
 if __name__ == "__main__":
-    # 强制关闭 dynamo trace (双保险)
     os.environ["TORCH_DISABLE_DYNAMO"] = "1"
     
     args = build_args()
