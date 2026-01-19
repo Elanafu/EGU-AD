@@ -27,9 +27,6 @@ def set_seed(seed: int = 2):
 if hasattr(torch, "_dynamo"):
     if isinstance(torch._dynamo, types.SimpleNamespace):
         def _no_op_disable(fn=None, recursive=None):
-            # 允许两种调用姿势：
-            # 1) torch._dynamo.disable()(f)
-            # 2) torch._dynamo.disable(f, recursive=True/False)
             if fn is None:
                 def decorator(inner_fn):
                     return inner_fn
