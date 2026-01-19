@@ -32,12 +32,7 @@ class GraphPSMSegLoader(object):
         self.train = data[:(int)(len(data) * 0.8)]
         self.val = data[(int)(len(data) * 0.8):]
 
-        # labels = np.load(data_path + '/WADI_test_label.npy')
-        # 统一成一维 0/1 序列
-        # if labels.ndim > 1:
-        #     # 如果是 (N,1) 或 (N,2) 等，取最后一列；也可按你的文件实际列选择
-        #     labels = labels[:, -1]
-        # self.test_labels = labels.astype(np.float32)
+
         self.test_labels = pd.read_csv(data_path + '/PSM_test_label.csv').values[:, 1:]
 
         print("test:", self.test.shape)
@@ -89,79 +84,10 @@ class GraphPSMSegLoader(object):
         
         return graph, torch.tensor(label)
 
-# class GraphMSLSegLoader(object):
-#     def __init__(self, data_path, win_size, step, mode="train"):
-#         self.mode = mode
-#         self.step = step
-#         self.win_size = win_size
-#         self.scaler = StandardScaler()
-#         data = np.load(data_path + "/MSL_train.npy")
-#         self.scaler.fit(data)
-#         data = self.scaler.transform(data)
-#         test_data = np.load(data_path + "/MSL_test.npy")
-#         self.test = self.scaler.transform(test_data)
-
-#         self.train = data[:(int)(len(data) * 0.8)]
-#         self.val = data[(int)(len(data) * 0.8):]
-#         self.test_labels = np.load(data_path + "/MSL_test_label.npy")
-        
-#         print("test:", self.test.shape)
-#         print("train:", self.train.shape)
-
-#     def __len__(self):
-
-#         if self.mode == "train":
-#             return (self.train.shape[0] - self.win_size) // self.step + 1
-#         elif (self.mode == 'val'):
-#             return (self.val.shape[0] - self.win_size) // self.step + 1
-#         elif (self.mode == 'test'):
-#             return (self.test.shape[0] - self.win_size) // self.win_size + 1
-#         else:
-#             return (self.val.shape[0] - self.win_size) // self.win_size + 1
-
-#     def __getitem__(self, index):
-#         index = index * self.step
-        
-#         if self.mode == "train":
-#             data = self.train[index:index + self.win_size]
-#             label = self.test_labels[index:index + self.win_size]
-#         elif (self.mode == 'val'):
-#             data = self.val[index:index + self.win_size]
-#             label = self.test_labels[index:index + self.win_size]
-#         elif (self.mode == 'test'):
-#             data = self.test[index:index + self.win_size]
-#             label = self.test_labels[index:index + self.win_size]
-#         else:
-#             data = self.val[index // self.step * self.win_size:index // self.step * self.win_size + self.win_size] 
-#             label = self.test_labels[index // self.step * self.win_size:index // self.step * self.win_size + self.win_size]
-        
-#         # Create graph data
-#         x = torch.tensor(data, dtype=torch.float32)  # Node features (time steps)
-        
-#         # Create edges based on temporal relations (i.e., connect each time step to its neighbors)
-#         edge_index = []
-#         for i in range(self.win_size):
-#             for j in range(max(0, i-1), min(self.win_size, i+2)):  # Connect neighboring time steps
-#                 if i != j:
-#                     edge_index.append([i, j])  # Add edge between time step i and j
-        
-#         edge_index = torch.tensor(edge_index, dtype=torch.long).t().contiguous()
-        
-#         # # Return as a graph (Data object)
-#         # graph = Data(x=x, edge_index=edge_index)
-        
-#         # return graph, torch.tensor(label)
-#         graph = Data(x=x, edge_index=edge_index,label=label)
-        
-#         return graph, torch.tensor(label)
 
 
 
 class GraphMSLSegLoader(object):
-    """
-    构图策略：严格的时间邻接链（±1）双向边，不做 dilation/长程边。
-    优点：更稳、更快、不稀释邻接信息；多尺度上下文交给卷积分支处理。
-    """
     def __init__(self, data_path, win_size, step, mode="train", add_self_loop: bool = False):
         self.mode = mode
         self.step = step
@@ -241,7 +167,6 @@ class GraphMSLSegLoader(object):
         x = torch.tensor(data, dtype=torch.float32)             # [T, C]
         edge_index = self.edge_index_tmpl                       # 复用模板，避免重复构图
 
-        # 打包为 PyG Data：节点特征 + 边 + 标签（逐时刻标签）
         graph = Data(x=x, edge_index=edge_index, label=torch.tensor(label))
         return graph, torch.tensor(label)
 
@@ -296,7 +221,6 @@ class GraphSMAPSegLoader(object):
 
         if self.mode == "train":
             data = self.train[index : index + self.win_size]
-            # 训练/验证不需要真标签 → 用占位 0
             label = np.zeros((self.win_size,), dtype=np.float32)
         elif self.mode == "val":
             data = self.val[index : index + self.win_size]
@@ -741,10 +665,6 @@ def get_graph_loader(data_path, batch_size, win_size=100, step=1, mode='train',d
 
     shuffle = mode == 'train'
     
-    # data_loader = torch_geometric.data.DataLoader(dataset=dataset,
-    #                          batch_size=batch_size,
-    #                          shuffle=shuffle,
-    #                          num_workers=8)  
     
     data_loader = DataLoader(
         dataset=dataset,
