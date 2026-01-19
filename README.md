@@ -31,9 +31,7 @@ NumPy, SciPy, and other standard scientific Python libraries
 ## Training and Testing
 
 ### Training
-```bash
 python main.py     --mode train     --dataset MSL     --data_path ./dataset/MSL     --model_save_path cpt_eie     --lr 1e-4     --num_epochs 5     --batch_size 128     --win_size 110     --input_c 55     --d_model 512     --e_layers 2     --gpu 2    --anormly_ratio 2     --seed 2 
 
 ### Testing
-```bash
 python main.py     --mode test     --dataset MSL     --data_path ./dataset/MSL     --model_save_path cpt_eie     --lr 1e-4     --num_epochs 5     --batch_size 128     --win_size 110     --input_c 55     --d_model 512     --e_layers 2     --gpu 2    --anormly_ratio 2     --seed 2 
