@@ -198,20 +198,20 @@ def compute_anomaly_scores(
     final = (rank_avg - rank_avg.mean()) / (rank_avg.std(unbiased=False) + eps)
 
     # -----------------------------------------------------------
-    # 输出结构：所有必要的调试项与论文中的分支项
+    # 输出结构
     # -----------------------------------------------------------
     parts = {
         # 时间一致性分支
-        "temporal_score": temporal_score,  # 最终时间分支得分 = w_tdev * tdev_z + w_mag * mag_z
-        "tdev_z": tdev_z,                 # 状态演化偏差（z-score）
-        "mag_z": mag_z,                   # 状态幅值偏差（z-score）
+        "temporal_score": temporal_score,  
+        "tdev_z": tdev_z,                 
+        "mag_z": mag_z,                   
 
         # 能量自然性分支
-        "energy_score":   r_z + kappa_z,  # 保持原有写法
-        "geom_score":     kms_z,          # 轨迹几何自然性分支
-        "r_z": r_z,                       # 能量趋势偏差
-        "kappa_z": kappa_z,               # 残差变化率偏差
-        "kms_z": kms_z,                   # 多尺度轨迹自然性偏差
+        "energy_score":   r_z + kappa_z,  
+        "geom_score":     kms_z,          
+        "r_z": r_z,                     
+        "kappa_z": kappa_z,               
+        "kms_z": kms_z,                   
 
         # 秩融合相关
         "rank_T": rank_T,
