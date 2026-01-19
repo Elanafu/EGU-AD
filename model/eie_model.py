@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from model.temporal_encoder import (
-    TemporalGraphEncoder,   # 早融合多尺度已经集成在这个类里
+    TemporalGraphEncoder, 
 )
 
 # -------- Energy Head 保持不变 --------
@@ -51,7 +51,6 @@ class EIEModel(nn.Module):
             nn.Linear(hidden_dim, 1)
         )
 
-        # ===== our8.0: 对比收缩投影头（保持不变）=====
         proj_dim = 128
         self.proj_T = nn.Sequential(          # 时间/预测分支投影 (用 p 或 h)
             nn.Linear(hidden_dim, hidden_dim),
@@ -64,7 +63,6 @@ class EIEModel(nn.Module):
             nn.Linear(hidden_dim, proj_dim)
         )
         
-        # ★ 新增：物理先验可学习权重模块
         self.pgw = PhysicsGuidedWeights(
             wR_prior=0.50,
             wK_prior=0.25,
@@ -102,43 +100,25 @@ class EIEModel(nn.Module):
 
 
 class PhysicsGuidedWeights(nn.Module):
-    """
-    物理先验可学习权重（PGLW）：
-    - 学习 EG 内部三项权重 wR, wK, wMS（softmax 归一化）
-    - 学习能量分支 vs 时间分支 的融合权重 wRank (sigmoid in [0,1])
-    - 带一个很小的 L2 先验约束，使其不偏离物理先验比例
-    """
     def __init__(self,
                  wR_prior: float = 0.50,
                  wK_prior: float = 0.25,
                  wMS_prior: float = 0.25,
                  wRank_prior: float = 0.80):
         super().__init__()
-        # 三个能量项的 logits
         self.theta = nn.Parameter(torch.zeros(3))
-        # 排名融合的 logit
         self.theta_rank = nn.Parameter(torch.tensor(0.0))
 
-        # 先验（常数，不参与梯度）
         self.register_buffer("w_prior", torch.tensor([wR_prior, wK_prior, wMS_prior], dtype=torch.float32))
         self.register_buffer("wRank_prior", torch.tensor(float(wRank_prior), dtype=torch.float32))
 
     def get_weights(self):
-        """
-        返回当前可学习权重:
-          wR, wK, wMS, wRank
-        其中 wR/wK/wMS >=0 且和为 1； wRank ∈ (0,1)
-        """
         w = torch.softmax(self.theta, dim=0)           # [3]
         wR, wK, wMS = w[0], w[1], w[2]
         wRank = torch.sigmoid(self.theta_rank)
         return wR, wK, wMS, wRank
 
     def prior_loss(self, lambda_w: float = 1e-3) -> torch.Tensor:
-        """
-        物理先验 L2 正则：
-        让学到的权重不过分偏离 (0.5,0.25,0.25) 和 0.8
-        """
         wR, wK, wMS, wRank = self.get_weights()
         loss = lambda_w * (
             (wR - self.w_prior[0])**2 +
